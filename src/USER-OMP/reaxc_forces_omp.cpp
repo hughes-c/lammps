@@ -554,6 +554,132 @@ void Init_Forces_noQEq_OMP( reax_system *system, control_params *control,
        sbp_i = &(system->reax_param.sbp[type_i]);
        ihb = sbp_i->p_hbond;
 
+#if defined(RTM)
+      while( 1 ) {
+         uint32_t backoff = 0;
+         uint32_t status = _xbegin();
+
+         if( status == _XBEGIN_STARTED ) {
+//             printf("Tx Begin %d\n", status);
+//             fflush(stdout);
+
+            {
+
+               if (ihb == 1 || ihb == 2) {
+                  start_i = Start_Index(i, far_nbrs);
+                  end_i   = End_Index(i, far_nbrs);
+
+                  for (pj = start_i; pj < end_i; ++pj) {
+                  nbr_pj = &( far_nbrs->select.far_nbr_list[pj] );
+                  j = nbr_pj->nbr;
+                  atom_j = &(system->my_atoms[j]);
+                  type_j = atom_j->type;
+                  if(type_j < 0) continue;
+                  sbp_j = &(system->reax_param.sbp[type_j]);
+                  jhb = sbp_j->p_hbond;
+
+                  if (nbr_pj->d <= control->hbond_cut) {
+                     int iflag = 0;
+                     int jflag = 0;
+
+                     if(ihb==1 && jhb==2) iflag = 1;
+                     else if(j<system->n && ihb == 2 && jhb == 1) jflag = 1;
+
+                     if(iflag || jflag) {
+                        if(iflag) {
+                           ihb_top = End_Index(atom_i->Hindex, hbonds);
+                           Set_End_Index(atom_i->Hindex, ihb_top+1, hbonds);
+                        } else if(jflag) {
+                           jhb_top = End_Index(atom_j->Hindex, hbonds);
+                           Set_End_Index(atom_j->Hindex, jhb_top+1, hbonds);
+                        }
+
+                        if(iflag) {
+                        hbonds->select.hbond_list[ihb_top].nbr = j;
+                        hbonds->select.hbond_list[ihb_top].scl = 1;
+                        hbonds->select.hbond_list[ihb_top].ptr = nbr_pj;
+                        } else if(jflag) {
+                        hbonds->select.hbond_list[jhb_top].nbr = i;
+                        hbonds->select.hbond_list[jhb_top].scl = -1;
+                        hbonds->select.hbond_list[jhb_top].ptr = nbr_pj;
+                        }
+
+                        num_hbonds++;
+                     } // if(iflag || jflag)
+
+                  }
+                  }
+               }
+
+            }
+
+            _xend();
+            break;
+         }
+
+         if( (status & _XABORT_CONFLICT) || (status & _XABORT_RETRY) ){
+            backoff++;
+            usleep(2 * backoff);
+//             printf("Tx Retry %d\n", status);
+//             fflush(stdout);
+            continue;
+         } else {
+            #pragma omp critical
+            {
+
+               if (ihb == 1 || ihb == 2) {
+                  start_i = Start_Index(i, far_nbrs);
+                  end_i   = End_Index(i, far_nbrs);
+
+                  for (pj = start_i; pj < end_i; ++pj) {
+                  nbr_pj = &( far_nbrs->select.far_nbr_list[pj] );
+                  j = nbr_pj->nbr;
+                  atom_j = &(system->my_atoms[j]);
+                  type_j = atom_j->type;
+                  if(type_j < 0) continue;
+                  sbp_j = &(system->reax_param.sbp[type_j]);
+                  jhb = sbp_j->p_hbond;
+
+                  if (nbr_pj->d <= control->hbond_cut) {
+                     int iflag = 0;
+                     int jflag = 0;
+
+                     if(ihb==1 && jhb==2) iflag = 1;
+                     else if(j<system->n && ihb == 2 && jhb == 1) jflag = 1;
+
+                     if(iflag || jflag) {
+                        if(iflag) {
+                           ihb_top = End_Index(atom_i->Hindex, hbonds);
+                           Set_End_Index(atom_i->Hindex, ihb_top+1, hbonds);
+                        } else if(jflag) {
+                           jhb_top = End_Index(atom_j->Hindex, hbonds);
+                           Set_End_Index(atom_j->Hindex, jhb_top+1, hbonds);
+                        }
+
+                        if(iflag) {
+                        hbonds->select.hbond_list[ihb_top].nbr = j;
+                        hbonds->select.hbond_list[ihb_top].scl = 1;
+                        hbonds->select.hbond_list[ihb_top].ptr = nbr_pj;
+                        } else if(jflag) {
+                        hbonds->select.hbond_list[jhb_top].nbr = i;
+                        hbonds->select.hbond_list[jhb_top].scl = -1;
+                        hbonds->select.hbond_list[jhb_top].ptr = nbr_pj;
+                        }
+
+                        num_hbonds++;
+                     } // if(iflag || jflag)
+
+                  }
+                  }
+               }
+
+            }
+//             printf("Tx Abort %d\n", status);
+//             fflush(stdout);
+            break;
+         }
+      }
+#else
 #if defined(_OPENMP)
 #pragma omp critical
 #endif
@@ -606,6 +732,7 @@ void Init_Forces_noQEq_OMP( reax_system *system, control_params *control,
        }
 
        } // omp critical
+#endif
      }
 
   } // if(control->hbond > 0)
